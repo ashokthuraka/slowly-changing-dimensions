@@ -1,0 +1,199 @@
+mysql> use ashok;
+Database changed
+mysql> show tables;
+Empty set (0.02 sec)
+
+mysql> create table employee_data(employee_id varchar(200) primary key,name varchar(200),salary int,organization varchar(200));
+Query OK, 0 rows affected (0.11 sec)
+
+mysql> desc employee_data;
++--------------+--------------+------+-----+---------+-------+
+| Field        | Type         | Null | Key | Default | Extra |
++--------------+--------------+------+-----+---------+-------+
+| employee_id  | varchar(200) | NO   | PRI | NULL    |       |
+| name         | varchar(200) | YES  |     | NULL    |       |
+| salary       | int          | YES  |     | NULL    |       |
+| organization | varchar(200) | YES  |     | NULL    |       |
++--------------+--------------+------+-----+---------+-------+
+4 rows in set (0.02 sec)
+
+mysql> create table employee_history(employee_id varchar(200) primary key,name varchar(200),salary int,organization varchar(200),prev_org varchar(200),start_date date,end_date date,indicator varchar(10),surrogate_key int);
+Query OK, 0 rows affected (0.05 sec)
+
+mysql> desc  employee_history;
++---------------+--------------+------+-----+---------+-------+
+| Field         | Type         | Null | Key | Default | Extra |
++---------------+--------------+------+-----+---------+-------+
+| employee_id   | varchar(200) | NO   | PRI | NULL    |       |
+| name          | varchar(200) | YES  |     | NULL    |       |
+| salary        | int          | YES  |     | NULL    |       |
+| organization  | varchar(200) | YES  |     | NULL    |       |
+| prev_org      | varchar(200) | YES  |     | NULL    |       |
+| start_date    | date         | YES  |     | NULL    |       |
+| end_date      | date         | YES  |     | NULL    |       |
+| indicator     | varchar(10)  | YES  |     | NULL    |       |
+| surrogate_key | int          | YES  |     | NULL    |       |
++---------------+--------------+------+-----+---------+-------+
+9 rows in set (0.01 sec)
+===========================================================================================
+CREATING TRIGGERS
+===========================================================================================
+DELIMITER $$
+CREATE TRIGGER trig1
+AFTER insert ON employee_data
+FOR EACH ROW
+BEGIN
+  INSERT INTO employee_history (employee_id,name,salary,organization,prev_org,Start_date, end_date,indicator,surrogate_key)
+  VALUES (new.employee_id,new.name,new.salary,new.organization,"-",now(),null,"Y",1);
+END $$
+DELIMITER ;
+----------------------------------------------------------------------------------------------
+DELIMITER $$
+CREATE TRIGGER trig2
+AFTER update ON employee_data
+FOR EACH ROW
+BEGIN
+if new.salary != old.salary then
+  UPDATE employee_history
+  SET end_Date = start_date-1, indicator = 'N'
+  WHERE employee_id = OLD.employee_id AND  new.salary != old.salary AND indicator="Y"; 
+end if;
+END $$
+DELIMITER ;
+-------------------------------------------------------------------------------------------------
+
+DELIMITER $$
+CREATE TRIGGER trig3
+AFTER update ON employee_data
+FOR EACH ROW
+BEGIN
+  if new.salary != old.salary then
+    INSERT INTO employee_history (employee_id,name,salary,organization,start_date, end_date,indicator)
+    VALUES (new.employee_id,new.name,new.salary,new.organization,now(),null,"Y" ); 
+  end if;
+END $$
+DELIMITER ;
+-----------------------------------------------------------------------------------------------------
+DELIMITER $$
+CREATE TRIGGER trig4
+AFTER UPDATE ON employee_data
+FOR EACH ROW
+BEGIN
+IF OLD.name!=NEW.name THEN
+	UPDATE employee_history SET name=new.name WHERE employee_id=NEW.employee_id;
+END IF;
+END $$
+DELIMITER ;
+-----------------------------------------------------------------------------------------------------
+DELIMITER $$
+CREATE TRIGGER trig5
+AFTER UPDATE ON employee_data
+FOR EACH ROW
+BEGIN
+IF OLD.organization!=NEW.organization THEN
+	UPDATE Employee_HISTORY SET organization=new.organization,prev_org=old.organization WHERE employee_id=NEW.employee_id;
+END IF;
+END $$
+DELIMITER ;
+------------------------------------------------------------------------------------------------------
+
+DELIMITER $$
+CREATE TRIGGER reset1_surrogate_key
+BEFORE INSERT ON employee_history
+FOR EACH ROW
+BEGIN
+  DECLARE max_surrogate_key INT;
+  DECLARE max_employee_id INT;
+  SELECT MAX(surrogate_key), MAX(employee_id) INTO max_surrogate_key, max_employee_id FROM employee_history WHERE employee_id = NEW.employee_id;
+  IF max_employee_id IS NULL THEN
+    SET max_employee_id = 0;
+  END IF;
+  IF max_surrogate_key IS NULL THEN
+    SET max_surrogate_key = 0;
+  END IF;
+  IF max_employee_id = NEW.employee_id THEN
+    SET NEW.surrogate_key = max_surrogate_key + 1;
+  ELSE
+    SET NEW.surrogate_key = 1;
+  END IF;
+END$$
+DELIMITER ;
+----------------------------------------------------------------------------------------------------------------
+
+DELIMITER $$
+CREATE TRIGGER reset2
+BEFORE INSERT ON employee_history
+FOR EACH ROW
+BEGIN
+  DECLARE pre varchar(20);
+  DECLARE max_employee_id INT;
+  SELECT  prev_org,MAX(employee_id) INTO pre,max_employee_id FROM employee_history WHERE employee_id = NEW.employee_id;
+  IF max_employee_id = NEW.employee_id THEN
+  SET NEW.prev_org = pre;
+  END IF;
+  
+END$$
+DELIMITER ;
+====================================================================================================================
+mysql> insert into employee_data values("1","Ashok",25000,"Auropro");
+Query OK, 1 row affected (0.01 sec)
+
+mysql> select * from employee_history;
++-------------+-------+--------+--------------+----------+------------+----------+-----------+---------------+
+| employee_id | name  | salary | organization | prev_org | start_date | end_date | indicator | surrogate_key |
++-------------+-------+--------+--------------+----------+------------+----------+-----------+---------------+
+| 1           | Ashok |  25000 | Auropro      | -        | 2023-02-23 | NULL     | Y         |             1 |
++-------------+-------+--------+--------------+----------+------------+----------+-----------+---------------+
+1 row in set (0.00 sec)
+
+mysql> insert into employee_data values("2","Madhav",25000,"Auropro");
+Query OK, 1 row affected (0.01 sec)
+
+mysql> select * from employee_history;
++-------------+--------+--------+--------------+----------+------------+----------+-----------+---------------+
+| employee_id | name   | salary | organization | prev_org | start_date | end_date | indicator | surrogate_key |
++-------------+--------+--------+--------------+----------+------------+----------+-----------+---------------+
+| 1           | Ashok  |  25000 | Auropro      | -        | 2023-02-23 | NULL     | Y         |             1 |
+| 2           | Madhav |  25000 | Auropro      | -        | 2023-02-23 | NULL     | Y         |             1 |
++-------------+--------+--------+--------------+----------+------------+----------+-----------+---------------+
+2 rows in set (0.00 sec)
+mysql>update employees set salary=20000 where employee_id="1";
+Query OK, 1 row affected (0.01 sec)
+mysql> select * from employee_history;
++-------------+--------+--------+--------------+----------+------------+-----------------+-----------+---------------+
+| employee_id | name   | salary | organization | prev_org | start_date | end_date        | indicator | surrogate_key |
++-------------+--------+--------+--------------+----------+------------+-----------------+-----------+---------------+
+| 1           | Ashok  |  25000 | Auropro      | -        | 2023-02-23 |2023-02-22       | N         |             1 |
+| 2           | Madhav |  25000 | Auropro      | -        | 2023-02-23 | NULL     	 | Y         |             1 |
+| 1           | Ashok  |  27000 | Auropro      | -        | 2023-02-23 | NULL            | Y         |             2 |
++-------------+--------+--------+--------------+----------+------------+-----------------+-----------+---------------+
+3 rows in set (0.00 sec)
+mysql>update employees set organization="TCS" where employee_id="2";
+Query OK, 1 row affected (0.01 sec)
+mysql> select * from employee_history;
++-------------+--------+--------+--------------+----------+------------+-----------------+-----------+---------------+
+| employee_id | name   | salary | organization | prev_org | start_date | end_date        | indicator | surrogate_key |
++-------------+--------+--------+--------------+----------+------------+-----------------+-----------+---------------+
+| 1           | Ashok  |  25000 | Auropro      | -        | 2023-02-23 |2023-02-22       | N         |             1 |
+| 2           | Madhav |  25000 | TCS          | Auropro  | 2023-02-23 | NULL     	 | Y         |             1 |
+| 1           | Ashok  |  27000 | Auropro      | -        | 2023-02-23 | NULL            | Y         |             2 |
++-------------+--------+--------+--------------+----------+------------+-----------------+-----------+---------------+
+3 rows in set (0.00 sec)
+mysql>update employees set name="Ashok Thuraka" where employee_id="1";
+Query OK, 1 row affected (0.01 sec)
+mysql> select * from employee_history;
++-------------+---------------+--------+--------------+----------+------------+-----------------+-----------+---------------+
+| employee_id | name          | salary | organization | prev_org | start_date | end_date        | indicator | surrogate_key |
++-------------+---------------+--------+--------------+----------+------------+-----------------+-----------+---------------+
+| 1           | Ashok Thuraka |  25000 | Auropro      | -        | 2023-02-23 |2023-02-22       | N         |             1 |
+| 2           | Madhav        |  25000 | TCS          | Auropro  | 2023-02-23 | NULL            | Y         |             1 |
+| 1           | Ashok Thuraka |  27000 | Auropro      | -        | 2023-02-23 | NULL            | Y         |             2 |
++-------------+---------------+--------+--------------+----------+------------+-----------------+-----------+---------------+
+3 rows in set (0.00 sec)
+
+
+
+
+
+
+
